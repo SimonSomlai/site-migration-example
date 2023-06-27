@@ -1,0 +1,235 @@
+---
+title: "Migrating rails to nextjs"
+slug: "migrating-rails-to-nextjs"
+Created: 2019-12-25 13:15:22 +0100
+Modified: 2020-02-22 16:39:53 +0100
+---
+
+I've always liked spending time on my personal site. My own special place on the internet where I could do what I want. My current version was 6 years old and served its purpose quite well.
+
+# Downsides
+ 
+But over time there were some drawbacks that just made managing my personal site a hassle;
+
+- It wasn't fast 🐌
+- It needed regular maintenance (database management, server upgrades, S3 asset handling, ...) 
+- The barrier to blogging was too big. (Since I used a custom-built CMS 😅)
+- Content wasn't portable to other places or frameworks
+- Releasing new versions would be slow
+
+# Criteria ✨
+
+For the next version I wanted something that:
+
+- Would be <u>blazing</u> fast 🔥. As in: **the fastest that the internet has to offer**. (Or at least close to that)
+- Would be simple to manage: No server upgrades, no database management, no microservice, no docker, no S3 asset handling and no stinking  CORS.
+- Enables me to **EASILY** write articles in markdown directly in the [Obsidian](https://obsidian.md/) note taking app
+- Would make my data portable. So in the future I could just take my JSON/Markdown content and move/import them into the next shiny thing.
+- Would be customisable and unopinionated since I want to be able to escape out of the "template" and do whatever I want! To exert the little creative freedom I have as a developer.
+
+<Test/>
+
+![](Screenshot%202023-06-20%20at%2018.43.33.png)
+
+![](Screenshot%202023-06-21%20at%2021.54.59.png)
+
+**Conclusion**: I wanted just a plain and simple static site where the data is read from  `.json/.md` files and renders everything at build time.
+
+Pretty straight forward right? 
+
+Wroong!
+
+# Paradox of choice
+
+Currently there are at least a million-bazillion frameworks that do exactly that and promise you the world. The ones I looked at were;
+
+1. Gatsbyjs: https://www.gatsbyjs.com/
+2. Hugo: https://gohugo.io/
+3. Jekyll: https://jekyllrb.com/
+4. Nextjs: https://nextjs.org/
+5. Ghost: https://ghost.org/
+
+Since all those choices don't differ that much and will give a great experience, I decided to just keep it simple and go for the most popular one. 
+
+Never a bad bet since you can be certain there will be plenty of documentation, bug reports and stack overflow entries to fall back upon when the going gets rough.
+
+![Caption](Pasted%20image%2020230621223918.png)
+So `nextjs` it was. 
+
+Let's go.
+
+# The journey 🧗‍♂️
+
+To migrate my old clunky rails app, there were 5 main steps I had to take;
+
+1. Extract the data
+2. Create the pages
+3. Integrate Obsidian
+4. Optimize performance
+5. Deploy
+
+## Extracting the data ⛑️
+
+I had 3 resources I cared about: `articles`, `testimonials` and `projects` that were living in a postgres db. To extract this, I added a simple JSON endpoint in my rails controllers to extract all the data;
+
+```ruby
+def list
+  @projects = Project.all.includes(:project_images_attachments).sort_by(&:created_at).reverse
+  render json: @projects
+end
+```
+
+This allowed me to just copy several json files with a flat data structure to work with. 
+
+```json
+// projects.json
+{
+  "id": 3,
+  "title": "Video Course App",
+  "description": "Dit was een persoonlijk project waarin ik een video-cursus heb uitgebouwd om mijn vaardigheden aan te scherpen. In deze cursus kan de gebruiker de lessen doorlopen, actiepunten implementeren, comments achterlaten en zijn vooruitgang bijhouden over de verschillende hoofdstukken. \r\n\u003cbr/\u003e\u003cbr/\u003e\r\nOver het algemeen een leuk project :) - misschien dat ik er in de toekomst nog iets mee doe! \u003cbr/\u003e\u003cbr/\u003e\r\n\r\n\u003cstrong\u003eDemo login: \u003c/strong\u003e demo@email.com \u0026 password",
+  "features": {
+    "responsive": "icon-resize-horizontal",
+  },
+  "link": "https://bg-video-course.herokuapp.com/",
+  "service": "webapplicatie",
+  ...
+}
+
+```
+
+## Creating the pages ⚒️
+
+The next step would be to use that data in my application to loop over the different resources and show some markup.
+
+I briefly contemplated to go for a shiny new theme, but I didn't really find something that's;
+
+- A one-pager
+- Minimal
+- Boxed (not full-width)
+- Could serve both as a portfolio and personal blog
+
+So I sticked to my existing 10 year old HTML templates full of `floats` and `!important` css rules that I bought for 10$ in college 😅
+
+![](Screenshot%202023-06-27%20at%2019.07.59.png)
+
+But I still think it looks pretty nice after all this time! 
+
+The first steps were pretty straight forward; 
+
+- Copy the rendered HTML for my homepage in the developer tools and convert it to JSX with https://transform.tools/html-to-jsx
+- Extract the styling with `uncss` https://davidwalsh.name/uncss to only get the used style rules per page
+- Replace some old JQuery libraries with more modern variants and tweak those a bit. Most of the code is simple markdown with simple loops;
+
+```jsx
+import { Swiper, SwiperSlide } from "swiper/react";
+import { articles } from "./articles.json";
+
+<Swiper>
+  {articles
+    .filter((article) => article.posted)
+    .map(({ title, description, slug, headerImage }) => (
+      <SwiperSlide
+        key={slug}
+        className="owl-item active"
+      >
+        <div className="oc-item">
+          <div className="ipost clearfix">
+            <div className="entry-image">
+              <Link href={slug}>
+                  <img
+                    placeholder="empty"
+                    alt={`${title} - Webdesign Antwerpen`}
+                    className="image_fade"
+                    src={headerImage}
+                  />
+                )}
+              </Link>
+            </div>
+            <div className="entry-title">
+              <h3>
+                <Link href={slug}>{title}</Link>
+              </h3>
+            </div>
+            <div className="entry-content">
+              <p>{description}</p>
+            </div>
+          </div>
+        </div>
+      </SwiperSlide>
+    ))}
+</Swiper>
+```
+
+
+## Integrate Obsidian with nextjs blog
+
+Since I recently migrated from [Onenote](https://www.onenote.com)  to [Obsidian](https://obsidian.md/), I wanted to have the clean markdown ([MDX actually](https://mdxjs.com/)) writing experience for my personal blog as well. This allows me to; 
+
+1. Keep all my notes/writing in one place and selectively publish whatever I want to the web
+2. Have great support for open-source writing tools (like support for chatGPT, spelling autocorrection, illustration/image generation)
+3. Allows me to preview the markdown as I type
+4. Keep content private until I'm ready to publish
+
+To do this, I added a simple `sync` command that would listen to file changes in my Obsidian vault and simply copy the entire directory (including video's and images) into my codebase.
+
+```json
+// package.json
+{
+  "sync": "sh ./scripts/sync.sh",
+  "write": "concurrently --kill-others \"yarn dev\" \"yarn sync\""
+}
+```
+
+```bash
+# sync.sh
+fswatch -o '/Desktop/writing' | xargs -I{} cp -R "'/Desktop/writing/migrating-rails-to-nextjs" "/simonsomlai/public/articles/"
+```
+
+Combining this with the `concurrently` package and the dev server, enabled me to have an instant preview mode whilst writing! 
+
+![](Screen%20Recording%202023-06-20%20at%2017.09.28.mov)
+
+I did have to include this line in my `getStaticProps` function to make live reloading work;
+
+```js
+const _webpackContext = require.context("public", true, /\.mdx$/); // this line makes hot reloading work 🤷‍♂️
+```
+
+## Performance optimisation 🔥
+
+So most of the heavy lifting was already finished. The pages were working, everything was rendering nicely and the writing experience felt really smooth. 
+
+And although nextjs comes with great performance out-of-the-box it doesn't automatically optimize the images when you render as a static site. Therefore I added-in https://www.npmjs.com/package/next-image-export-optimizer 
+
+Afterwards, comparing the results with Google lighthouse it did make a big difference! 
+
+
+
+
+
+1. Image optimization
+2. Sitemap
+
+`next-image-export-optimizer`
+
+## Sitemap 🔍
+
+
+
+--- 
+
+
+
+
+# References
+- https://dmitripavlutin.com/all-posts/
+- [https://thebestmotherfucking.website/](https://thebestmotherfucking.website/)
+- https://www.sanity.io/
+- https://rutar.org/writing/
+- https://motherfuckingwebsite.com/
+- https://zenorocha.com/how-i-built-my-personal-website 
+- https://sive.rs/
+- [nownownow.com](nownownow.com)
+- https://10kbclub.com/
+
+![](3.%20WRITING/migrating-rails-to-nextjs/media/screencapture-dashboard-heroku-apps-2023-06-20-10_10_33.png)
